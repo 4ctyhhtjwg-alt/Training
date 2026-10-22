@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CTL・ATL・TSB 計算</title>
+<style>
+:root{--bg:#f5f6f4;--surf:#fff;--ink:#17212b;--sub:#5d6b78;--line:#d9dedb;--ctl:#1f5fbf;--atl:#d6336c;--pos:#2f9e5b;--neg:#c9772a;--accent:#1f5fbf;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171c;--surf:#1b222a;--ink:#e8edf1;--sub:#93a1ad;--line:#2c3640;--ctl:#6ea8ff;--atl:#ff7aa8;--pos:#5fd18b;--neg:#f0a45e;--accent:#6ea8ff;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12171c;--surf:#1b222a;--ink:#e8edf1;--sub:#93a1ad;--line:#2c3640;--ctl:#6ea8ff;--atl:#ff7aa8;--pos:#5fd18b;--neg:#f0a45e;--accent:#6ea8ff;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px 14px 40px}
+h1{font-size:20px;margin:6px 0 14px}
+h2{font-size:15px;margin:0 0 10px}
+section{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi div{border-left:4px solid var(--line);padding:2px 0 2px 10px}
+.kpi b{display:block;font-size:28px;line-height:1.2;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--sub);font-size:12px}
+#k1{border-color:var(--ctl)}#k2{border-color:var(--atl)}#k3{border-color:var(--pos)}
+#state{margin:10px 0 0;color:var(--sub);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:8px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--sub);gap:2px}
+input,select,textarea,button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+input[type=number]{width:92px}input[type=date]{width:150px}
+textarea{width:100%;height:84px;font-family:ui-monospace,monospace;font-size:13px}
+button{cursor:pointer;background:var(--accent);color:#fff;border-color:transparent}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button{padding:4px 10px;font-size:13px}
+.tabs button.on{background:var(--accent);color:#fff}
+.tabs button:not(.on){background:transparent;color:var(--ink);border-color:var(--line)}
+svg{width:100%;height:auto;display:block}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-top:4px;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+.scroll{overflow-x:auto;max-height:320px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
+th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{position:sticky;top:0;background:var(--surf);color:var(--sub);font-weight:600}
+.note{font-size:12px;color:var(--sub);margin:6px 0 0}
+.del{padding:1px 7px;background:transparent;color:var(--sub);border-color:var(--line)}
+</style>
+</head>
+<body>
+<main>
+<h1>CTL・ATL・TSB 計算</h1>
+
+<section>
+<div class="kpi">
+<div id="k1"><b id="vc">–</b><span>CTL（体力）</span></div>
+<div id="k2"><b id="va">–</b><span>ATL（疲労）</span></div>
+<div id="k3"><b id="vt">–</b><span>TSB（調子）</span></div>
+</div>
+<p id="state">データを入力すると、今日の状態が表示されます。</p>
+</section>
+
+<section>
+<h2>推移</h2>
+<div class="tabs" id="tabs"><button data-r="90" class="on">90日</button><button data-r="180">180日</button><button data-r="0">全期間</button></div>
+<div id="chart"></div>
+<div class="legend"><span><i style="background:var(--ctl)"></i>CTL</span><span><i style="background:var(--atl)"></i>ATL</span><span><i style="background:var(--pos)"></i>TSB（0以上）</span><span><i style="background:var(--neg)"></i>TSB（0未満）</span></div>
+</section>
+
+<section>
+<h2>練習を追加</h2>
+<div class="row">
+<label>日付<input type="date" id="d"></label>
+<label>TSS<input type="number" id="tss" min="0" step="1" inputmode="decimal"></label>
+<button id="add">追加</button>
+</div>
+<div class="row">
+<label>NP（W）<input type="number" id="np" min="0" inputmode="decimal"></label>
+<label>時間（分）<input type="number" id="min" min="0" inputmode="decimal"></label>
+<button class="ghost" id="calc">NPと時間からTSSを計算</button>
+</div>
+<p class="note">TSS = 時間(秒) × NP × IF ÷ (FTP × 3600) × 100、IF = NP ÷ FTP。同じ日に追加すると合計されます。</p>
+</section>
+
+<section>
+<h2>設定</h2>
+<div class="row">
+<label>FTP（W）<input type="number" id="ftp" value="200" min="1"></label>
+<label>CTL時定数（日）<input type="number" id="tc" value="42" min="1"></label>
+<label>ATL時定数（日）<input type="number" id="ta" value="7" min="1"></label>
+<label>開始時CTL<input type="number" id="c0" value="0" min="0"></label>
+<label>開始時ATL<input type="number" id="a0" value="0" min="0"></label>
+</div>
+<p class="note">TSBは前日のCTL − 前日のATLで計算します。練習のない日はTSS 0として扱い、今日まで延長します。</p>
+</section>
+
+<section>
+<h2>CSVの取り込み・書き出し</h2>
+<textarea id="csv" placeholder="日付,TSS&#10;2026-10-01,85&#10;2026-10-03,120"></textarea>
+<div class="row" style="margin-top:8px">
+<button id="imp">取り込む（上書き）</button>
+<button class="ghost" id="exp">現在のデータをCSVにする</button>
+<button class="ghost" id="clr">全データを削除</button>
+</div>
+</section>
+
+<section>
+<h2>日別の結果</h2>
+<div class="scroll"><table><thead><tr><th>日付</th><th>TSS</th><th>CTL</th><th>ATL</th><th>TSB</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+</section>
+</main>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var KEY="pmc-data-v1", entries={}, range=90;
+function load(){try{var s=localStorage.getItem(KEY);if(s){var o=JSON.parse(s);entries=o.e||{};["ftp","tc","ta","c0","a0"].forEach(function(k){if(o.s&&o.s[k]!=null)$(k).value=o.s[k]})}}catch(e){}}
+function save(){try{var s={};["ftp","tc","ta","c0","a0"].forEach(function(k){s[k]=$(k).value});localStorage.setItem(KEY,JSON.stringify({e:entries,s:s}))}catch(e){}}
+function iso(ms){return new Date(ms).toISOString().slice(0,10)}
+function ms(d){return Date.parse(d+"T00:00:00Z")}
+function today(){var n=new Date();return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0")}
+function compute(){
+  var ks=Object.keys(entries).sort();if(!ks.length)return[];
+  var tc=Math.max(1,+$("tc").value||42),ta=Math.max(1,+$("ta").value||7);
+  var c=+$("c0").value||0,a=+$("a0").value||0,out=[];
+  var end=Math.max(ms(today()),ms(ks[ks.length-1]));
+  for(var t=ms(ks[0]);t<=end;t+=864e5){
+    var d=iso(t),x=entries[d]||0,tsb=c-a;
+    c=c+(x-c)/tc;a=a+(x-a)/ta;
+    out.push({d:d,tss:x,ctl:c,atl:a,tsb:tsb});
+  }
+  return out;
+}
+function stateText(v){
+  if(v>25)return"TSBが高すぎます。休みすぎで体力が落ち始める領域です。";
+  if(v>5)return"フレッシュな状態です。レースや強度の高い練習に向いています。";
+  if(v>-10)return"中立です。体力を維持しやすい状態です。";
+  if(v>-30)return"適度に疲労が溜まっている、体力を伸ばしやすい領域です。";
+  return"疲労が大きく、オーバーリーチに注意が必要な領域です。回復日を入れましょう。";
+}
+function chart(r){
+  var n=range?r.slice(-range):r;
+  if(n.length<2){$("chart").innerHTML='<p class="note">2日以上のデータを入れるとグラフが表示されます。</p>';return}
+  var W=720,L=34,R=8,T=8,H1=190,gap=22,H2=90,w=W-L-R,H=T+H1+gap+H2+16;
+  var mx=Math.max.apply(null,n.map(function(p){return Math.max(p.ctl,p.atl)}));mx=Math.max(10,Math.ceil(mx*1.1/10)*10);
+  var tmax=Math.max.apply(null,n.map(function(p){return Math.abs(p.tsb)}));tmax=Math.max(10,Math.ceil(tmax*1.1/10)*10);
+  var x=function(i){return L+w*i/(n.length-1)};
+  var y1=function(v){return T+H1-H1*v/mx};
+  var y0=T+H1+gap,y2=function(v){return y0+H2/2-(H2/2)*v/tmax};
+  var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="CTL、ATL、TSBの推移">';
+  for(var g=0;g<=4;g++){var v=mx*g/4,yy=y1(v);s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'" stroke="var(--line)"/><text x="'+(L-5)+'" y="'+(yy+4)+'" text-anchor="end" font-size="11" fill="var(--sub)">'+Math.round(v)+'</text>'}
+  var pc=n.map(function(p,i){return x(i)+","+y1(p.ctl)}).join(" "),pa=n.map(function(p,i){return x(i)+","+y1(p.atl)}).join(" ");
+  s+='<polyline points="'+pa+'" fill="none" stroke="var(--atl)" stroke-width="1.8"/><polyline points="'+pc+'" fill="none" stroke="var(--ctl)" stroke-width="2.4"/>';
+  s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y2(0)+'" y2="'+y2(0)+'" stroke="var(--sub)"/>';
+  s+='<text x="'+(L-5)+'" y="'+(y2(tmax)+4)+'" text-anchor="end" font-size="11" fill="var(--sub)">'+tmax+'</text><text x="'+(L-5)+'" y="'+(y2(-tmax)+4)+'" text-anchor="end" font-size="11" fill="var(--sub)">-'+tmax+'</text>';
+  var bw=Math.max(1,w/n.length*0.8);
+  n.forEach(function(p,i){var a=y2(p.tsb),b=y2(0);s+='<rect x="'+(x(i)-bw/2)+'" y="'+Math.min(a,b)+'" width="'+bw+'" height="'+Math.abs(a-b)+'" fill="'+(p.tsb>=0?"var(--pos)":"var(--neg)")+'"/>'});
+  var k=Math.min(4,n.length-1);
+  for(var j=0;j<=k;j++){var i=Math.round((n.length-1)*j/k);s+='<text x="'+x(i)+'" y="'+(H-2)+'" text-anchor="'+(j==0?"start":j==k?"end":"middle")+'" font-size="11" fill="var(--sub)">'+n[i].d.slice(2)+'</text>'}
+  $("chart").innerHTML=s+'</svg>';
+}
+function render(){
+  save();
+  var r=compute();
+  if(!r.length){$("vc").textContent=$("va").textContent=$("vt").textContent="–";$("state").textContent="データを入力すると、今日の状態が表示されます。";$("chart").innerHTML="";$("tb").innerHTML="";return}
+  var l=r[r.length-1],c=l.ctl,a=l.atl,t=c-a;
+  $("vc").textContent=c.toFixed(1);$("va").textContent=a.toFixed(1);$("vt").textContent=(t>0?"+":"")+t.toFixed(1);
+  $("state").textContent=stateText(t);
+  chart(r);
+  var h="";
+  for(var i=r.length-1;i>=0;i--){var p=r[i];h+="<tr><td>"+p.d+"</td><td>"+p.tss+"</td><td>"+p.ctl.toFixed(1)+"</td><td>"+p.atl.toFixed(1)+"</td><td>"+(p.tsb>0?"+":"")+p.tsb.toFixed(1)+'</td><td>'+(entries[p.d]!=null?'<button class="del" data-d="'+p.d+'" aria-label="'+p.d+'を削除">×</button>':"")+"</td></tr>"}
+  $("tb").innerHTML=h;
+}
+$("d").value=today();
+$("add").onclick=function(){var d=$("d").value,v=parseFloat($("tss").value);if(!d||!(v>=0)){alert("日付とTSSを入力してください。");return}entries[d]=(entries[d]||0)+v;$("tss").value="";render()};
+$("calc").onclick=function(){var f=+$("ftp").value,np=+$("np").value,m=+$("min").value;if(!(f>0&&np>0&&m>0)){alert("FTP、NP、時間を入力してください。");return}$("tss").value=Math.round(m*60*np*(np/f)/(f*3600)*100)};
+$("tb").onclick=function(e){var d=e.target.getAttribute&&e.target.getAttribute("data-d");if(d){delete entries[d];render()}};
+$("tabs").onclick=function(e){var r=e.target.getAttribute&&e.target.getAttribute("data-r");if(r==null)return;range=+r;[].forEach.call($("tabs").children,function(b){b.classList.toggle("on",b===e.target)});render()};
+["ftp","tc","ta","c0","a0"].forEach(function(k){$(k).onchange=render});
+$("imp").onclick=function(){
+  var o={},bad=0;$("csv").value.split(/\r?\n/).forEach(function(ln){
+    var m=ln.trim().split(/[,\t;]/);if(m.length<2)return;
+    var d=m[0].trim().replace(/\//g,"-").replace(/^(\d{4})-(\d{1,2})-(\d{1,2})$/,function(_,y,mo,da){return y+"-"+mo.padStart(2,"0")+"-"+da.padStart(2,"0")}),v=parseFloat(m[1]);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&v>=0)o[d]=(o[d]||0)+v;else if(!/日付|date/i.test(m[0]))bad++});
+  if(!Object.keys(o).length){alert("取り込める行がありません。「日付,TSS」の形式で入力してください。");return}
+  entries=o;render();if(bad)alert(bad+"行は形式が合わず読み飛ばしました。");
+};
+$("exp").onclick=function(){$("csv").value="日付,TSS\n"+Object.keys(entries).sort().map(function(d){return d+","+entries[d]}).join("\n")};
+$("clr").onclick=function(){if(confirm("すべての練習データを削除しますか？")){entries={};render()}};
+load();render();
+})();
+</script>
+</body>
+</html>
